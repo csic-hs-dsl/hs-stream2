@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_HADDOCK show-extensions #-}
 
 
@@ -25,6 +26,7 @@ import Prelude hiding (id, mapM, mapM_, take, foldl)
 import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
 
+import qualified Prelude
 import qualified Control.Concurrent.Chan.Unagi as UQ
 import qualified Control.Concurrent.Chan.Unagi.Bounded as BQ 
 
@@ -68,34 +70,58 @@ newQueue = newUQueue
 -- Tipo de los ids de streams
 type StreamId = UUID
 
--- Los streams obtienen datos de tipo a y subscripciones para datos de tipo b (o sea, generan datos de tipo b)
-data S a b = S StreamId (SQueue a b)
-
--- Las colas de streams contienen datos de tipo QData
-data SQueue a b = Queue (QData a b)
+data Subscripton b = forall i o. Subscripton StreamId (b -> i) (SQueue i o)
 
 -- El tipo QData puede contener datos, pedidos de datos, subscripciones y desubscripciones
 -- El Maybe de Request es en caso que sea infinito
 data QData a b = 
     Data StreamId (Maybe a) 
     | Request StreamId (Maybe Int) 
-    | forall i o . Subscrip StreamId (b -> i) (SQueue i o) 
+    | Subscrip (Subscripton b)
     | DeSubscrip StreamId
+
+type SQueue a b = Queue (QData a b)
+
+-- Los streams obtienen datos de tipo a y subscripciones para datos de tipo b (o sea, generan datos de tipo b)
+data S a b = S StreamId (SQueue a b)
 
 
 
 -- En general, al crearse un nuevo stream, lo primero que éste hace es subscribirse a otro (obviamente el unfold no lo hace)
 sUnfold :: (i -> (Maybe (o, i))) -> i -> IO (S () o)
-sUnfold = do
-    qi <- newQueue
+sUnfold fun seed = do
+    -- Create new S
     sId <- nextRandom
+    qi <- newQueue
     let s = S sId qi
-    forkIO $ work s
+    -- Do my work
+    forkIO $ work s [] seed
     return s
-    where work = undefined
+    where 
+        work s @ (S sId qi) subscribers currSeed = do
+            msg <- readQueue qi
+            case msg of
+                --Data ssId (Just d) -> undefined
+                --Data ssId Nothing -> undefined
+                Request ssId (Just n) -> undefined
+                Subscrip subscription -> do
+                    work s (subscription : subscribers) currSeed
+                DeSubscrip ssId -> undefined
+
 
 sMap :: (b -> c) -> S a b -> IO (S b c)
-sMap = undefined
+sMap fun (S inId inQi) = do
+    -- Create new S
+    sId <- nextRandom
+    qi <- newQueue
+    let s = S sId qi
+    -- Send subcribe message to inQi
+    writeQueue inQi (Subscrip $ Subscripton sId Prelude.id qi)
+    -- Do my work
+    forkIO $ work s []
+    return s
+    where 
+        work = undefined
 
 sFilter :: (b -> Bool) -> S a b -> IO (S b b)
 sFilter = undefined

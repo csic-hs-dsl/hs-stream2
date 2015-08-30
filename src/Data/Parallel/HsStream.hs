@@ -136,10 +136,29 @@ sMap fun (S inId inQi) = do
     -- Send subcribe message to inQi
     writeQueue inQi (Subscrip sId Prelude.id qi)
     -- Do my work
-    forkIO $ work s []
+    forkIO $ work s Map.empty
     return s
     where 
-        work = undefined
+        work s @ (S sId qi) subscribers = do
+            msg <- readQueue qi
+            case msg of
+                Data ssId (Just d) -> do
+                    -- Aplico la funcion, lo guardo en un buffer, y si hay subscriptores que pidieron datos enviarselos.
+                    undefined
+                Data ssId Nothing -> do
+                    -- El buffer puede tener Nothing y si le lee ese dato es que hay que morirse.
+                    undefined
+                Request ssId (Just n) -> do
+                    -- Aumento la cantidad de datos que pidio ese subscriptor. Si hay datos en el buffer y no hay subscriptor con 0 les envio datos.
+                    undefined
+                Subscrip ssId sf sqI -> do
+                    -- Agrega un nuevo subscriptor.
+                    undefined
+                DeSubscrip ssId -> do
+                    -- Se desubscribe al correspondiente. Si ya no se tienen subscriptores se envia una desubscripcion hacia atras.
+                    undefined
+
+        
 
 sFilter :: (b -> Bool) -> S a b -> IO (S b b)
 sFilter = undefined

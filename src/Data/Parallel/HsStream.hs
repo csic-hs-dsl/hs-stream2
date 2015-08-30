@@ -14,7 +14,7 @@ module Data.Parallel.HsStream where
 
 
 import qualified Data.Sequence as S
-import Data.Foldable (mapM_, foldlM, foldl)
+import Data.Foldable (mapM_, foldlM, foldl, traverse_)
 import Data.Maybe (isJust, fromJust)
 import Data.Traversable (Traversable, mapM)
 import Control.Concurrent (forkIO, ThreadId, killThread, threadDelay)
@@ -26,6 +26,7 @@ import Prelude hiding (id, mapM, mapM_, take, foldl)
 import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
 
+import qualified Data.Map.Strict as Map
 import qualified Prelude
 import qualified Control.Concurrent.Chan.Unagi as UQ
 import qualified Control.Concurrent.Chan.Unagi.Bounded as BQ 
@@ -70,14 +71,15 @@ newQueue = newUQueue
 -- Tipo de los ids de streams
 type StreamId = UUID
 
-data Subscripton b = forall i o. Subscripton StreamId (b -> i) (SQueue i o)
+data Subscription b = forall i o. Subscription Int (b -> i) (SQueue i o)
+
 
 -- El tipo QData puede contener datos, pedidos de datos, subscripciones y desubscripciones
 -- El Maybe de Request es en caso que sea infinito
 data QData a b = 
     Data StreamId (Maybe a) 
     | Request StreamId (Maybe Int) 
-    | Subscrip (Subscripton b)
+    | forall i o. Subscrip StreamId (b -> i) (SQueue i o)
     | DeSubscrip StreamId
 
 type SQueue a b = Queue (QData a b)
@@ -95,7 +97,7 @@ sUnfold fun seed = do
     qi <- newQueue
     let s = S sId qi
     -- Do my work
-    forkIO $ work s [] seed
+    forkIO $ work s Map.empty seed
     return s
     where 
         work s @ (S sId qi) subscribers currSeed = do
@@ -103,10 +105,26 @@ sUnfold fun seed = do
             case msg of
                 --Data ssId (Just d) -> undefined
                 --Data ssId Nothing -> undefined
-                Request ssId (Just n) -> undefined
-                Subscrip subscription -> do
-                    work s (subscription : subscribers) currSeed
-                DeSubscrip ssId -> undefined
+                Request ssId (Just n) -> do
+                    let auxSubs = Map.adjust (\(Subscription m sf sqI) -> Subscription (n+m) sf sqI) ssId subscribers
+                        minReq = minimum $ map (\(Subscription m _ _) -> m) (Map.elems subscribers)
+                        newSubscribers = Map.map (\(Subscription m sf sqI) -> Subscription (m-n) sf sqI) auxSubs
+                    genAndWrite s minReq currSeed newSubscribers
+                Subscrip ssId sf sqI -> do
+                    work s (Map.insert ssId (Subscription 0 sf sqI) subscribers) currSeed
+                DeSubscrip ssId -> do
+                    let newSubscribers = Map.delete ssId subscribers
+                    when (not $ Map.null newSubscribers) (work s newSubscribers currSeed)
+        genAndWrite s @ (S sId _) timesLeft seed subscribers =
+            if (timesLeft > 0) then
+                case fun seed of
+                    Just (d, newSeed) -> do 
+                        traverse_ (\(Subscription _ f sqI) -> writeQueue sqI (Data sId (Just $ f d))) (Map.elems subscribers)
+                        genAndWrite s (timesLeft-1) newSeed subscribers
+                    Nothing -> do
+                        traverse_ (\(Subscription _ _ sqI) -> writeQueue sqI (Data sId (Nothing))) (Map.elems subscribers)
+            else
+                work s subscribers seed
 
 
 sMap :: (b -> c) -> S a b -> IO (S b c)
@@ -116,7 +134,7 @@ sMap fun (S inId inQi) = do
     qi <- newQueue
     let s = S sId qi
     -- Send subcribe message to inQi
-    writeQueue inQi (Subscrip $ Subscripton sId Prelude.id qi)
+    writeQueue inQi (Subscrip sId Prelude.id qi)
     -- Do my work
     forkIO $ work s []
     return s

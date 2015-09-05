@@ -169,3 +169,6 @@ sUntil = undefined
 sJoin :: S a1 b1 -> S a2 b2 -> IO (S (Either b1 b2) (b1, b2))
 sJoin = undefined
 
+-- El reduce no genera un hilo, esto supongo que esta bien si hay un unico reduce.
+sReduce :: (a -> b -> b) -> b -> S x a -> IO b
+sReduce = undefined

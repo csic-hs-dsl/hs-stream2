@@ -171,4 +171,25 @@ sJoin = undefined
 
 -- El reduce no genera un hilo, esto supongo que esta bien si hay un unico reduce.
 sReduce :: (a -> b -> b) -> b -> S x a -> IO b
-sReduce = undefined
+sReduce f z (S inId inQi) = do
+    -- Create new S
+    sId <- nextRandom
+    qi <- newQueue
+    let s = S sId qi
+    -- Send subcribe message to inQi
+    writeQueue inQi (Subscrip sId Prelude.id qi)
+    -- Do my work
+    result <- work s z 0
+    return result
+    where 
+        work s @ (S sId qi) acc 0 = do
+            writeQueue inQi (Request sId (Just 10))
+            work s acc 10
+        work s @ (S sId qi) acc reqData = do
+            msg <- readQueue qi
+            case msg of
+                Data ssId (Just d) -> work s (f d acc) (reqData - 1)
+                Data ssId Nothing -> return acc
+                --Request ssId (Just n) -> undefined
+                --Subscrip ssId sf sqI -> undefined
+                --DeSubscrip ssId -> undefined

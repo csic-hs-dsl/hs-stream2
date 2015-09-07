@@ -106,13 +106,16 @@ sUnfold fun seed = do
                 --Data ssId (Just d) -> undefined
                 --Data ssId Nothing -> undefined
                 Request ssId (Just n) -> do
+--                    putStrLn $ "sUnfold Request " ++ (show n)
                     let auxSubs = Map.adjust (\(Subscription m sf sqI) -> Subscription (n+m) sf sqI) ssId subscribers
-                        minReq = minimum $ map (\(Subscription m _ _) -> m) (Map.elems subscribers)
-                        newSubscribers = Map.map (\(Subscription m sf sqI) -> Subscription (m-n) sf sqI) auxSubs
+                        minReq = minimum $ map (\(Subscription m _ _) -> m) (Map.elems auxSubs)
+                        newSubscribers = Map.map (\(Subscription m sf sqI) -> Subscription (m-minReq) sf sqI) auxSubs
                     genAndWrite s minReq currSeed newSubscribers
                 Subscrip ssId sf sqI -> do
+--                    putStrLn $ "sUnfold Subscrip"
                     work s (Map.insert ssId (Subscription 0 sf sqI) subscribers) currSeed
                 DeSubscrip ssId -> do
+--                    putStrLn $ "sUnfold DeSubscrip"
                     let newSubscribers = Map.delete ssId subscribers
                     when (not $ Map.null newSubscribers) (work s newSubscribers currSeed)
         genAndWrite s @ (S sId _) timesLeft seed subscribers =
@@ -183,13 +186,18 @@ sReduce f z (S inId inQi) = do
     return result
     where 
         work s @ (S sId qi) acc 0 = do
+--            putStrLn "sReduce 0"
             writeQueue inQi (Request sId (Just 10))
             work s acc 10
         work s @ (S sId qi) acc reqData = do
             msg <- readQueue qi
             case msg of
-                Data ssId (Just d) -> work s (f d acc) (reqData - 1)
-                Data ssId Nothing -> return acc
+                Data ssId (Just d) -> do
+--                    putStrLn "sReduce Just"
+                    work s (f d acc) (reqData - 1)
+                Data ssId Nothing -> do
+--                    putStrLn "sReduce Nothing"
+                    return acc
                 --Request ssId (Just n) -> undefined
                 --Subscrip ssId sf sqI -> undefined
                 --DeSubscrip ssId -> undefined

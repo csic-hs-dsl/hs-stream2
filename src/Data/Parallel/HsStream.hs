@@ -26,11 +26,13 @@ import Prelude hiding (id, mapM, mapM_, take, foldl)
 import Data.UUID (UUID)
 import Data.UUID.V4 (nextRandom)
 
+import qualified Data.Dequeue as Buffer
 import qualified Data.Map.Strict as Map
 import qualified Prelude
 import qualified Control.Concurrent.Chan.Unagi as UQ
 import qualified Control.Concurrent.Chan.Unagi.Bounded as BQ 
 
+import Debug.Trace (traceM)
 
 ---------------- QUEUE ----------------
 
@@ -82,10 +84,41 @@ data QData a b =
     | forall i o. Subscrip StreamId (b -> i) (SQueue i o)
     | DeSubscrip StreamId
 
+instance Show a => Show (QData a b) where
+    show (Data sId d) = "Data " ++ show sId ++ " " ++ show d
+    show (Request sId d) = "Request " ++ show sId ++ " " ++ show d
+    show (Subscrip sId _ _) = "Subscrip " ++ show sId
+    show (DeSubscrip sId) = "DeSubscrip " ++ show sId
+
+
 type SQueue a b = Queue (QData a b)
 
 -- Los streams obtienen datos de tipo a y subscripciones para datos de tipo b (o sea, generan datos de tipo b)
 data S a b = S StreamId (SQueue a b)
+
+
+emtpyBuffer :: Buffer.BankersDequeue a
+emtpyBuffer = Buffer.empty
+
+emptySet :: forall b. Map.Map StreamId (Subscription b)
+emptySet = Map.empty
+
+nullSet :: forall b. Map.Map StreamId (Subscription b) -> Bool
+nullSet = Map.null
+
+addSub sId sub set = Map.insert sId sub set
+
+removeSub sId set = Map.delete sId set
+
+addReqToSub ssId n subs = Map.adjust (\(Subscription m sf sqI) -> Subscription (n+m) sf sqI) ssId subs
+
+minSubReq subs = minimum $ map (\(Subscription m _ _) -> m) (Map.elems subs)
+
+removeReqToSubs n subs = Map.map (\(Subscription m sf sqI) -> Subscription (m-n) sf sqI) subs
+
+sendData sId d subs = traverse_ (\(Subscription _ f sqI) -> writeQueue sqI (Data sId (Just $ f d))) (Map.elems subs)
+
+sendNothing sId subs = traverse_ (\(Subscription _ _ sqI) -> writeQueue sqI (Data sId (Nothing))) (Map.elems subs)
 
 
 
@@ -130,36 +163,85 @@ sUnfold fun seed = do
                 work s subscribers seed
 
 
-sMap :: (b -> c) -> S a b -> IO (S b c)
+sMap :: Show b => (b -> c) -> S a b -> IO (S b c)
 sMap fun (S inId inQi) = do
     -- Create new S
-    sId <- nextRandom
-    qi <- newQueue
-    let s = S sId qi
+    myId <- nextRandom
+    myQi <- newQueue
     -- Send subcribe message to inQi
-    writeQueue inQi (Subscrip sId Prelude.id qi)
+    writeQueue inQi (Subscrip myId Prelude.id myQi)
     -- Do my work
-    forkIO $ work s Map.empty
-    return s
+    forkIO $ work myId myQi emptySet emtpyBuffer
+    return $ S myId myQi
     where 
-        work s @ (S sId qi) subscribers = do
-            msg <- readQueue qi
+        work myId myQi subscribers buffer = do
+            msg <- readQueue myQi
+            traceM $ "sMap: received message on work state: (" ++ show msg ++ ")"
             case msg of
-                Data ssId (Just d) -> do
+                Data _ (Just d) -> do
                     -- Aplico la funcion, lo guardo en un buffer, y si hay subscriptores que pidieron datos enviarselos.
-                    undefined
-                Data ssId Nothing -> do
-                    -- El buffer puede tener Nothing y si le lee ese dato es que hay que morirse.
-                    undefined
+                    let auxBuffer = Buffer.pushFront buffer (fun d)
+                        minReq = min (Buffer.length buffer) (minSubReq subscribers)
+                    newBuffer <- sendToSubscribers myId subscribers minReq auxBuffer
+                    let newSubs = removeReqToSubs minReq subscribers
+                    work myId myQi newSubs newBuffer
+                Data _ Nothing -> do
+                    if (Buffer.null buffer) then
+                        -- Si no hay nada en el buffer, se envia Nothing y se termina el hilo.
+                        sendNothing myId subscribers
+                    else do
+                        -- Si hay algo en el buffer hay que esperar que lo pidan.
+                        traceM "sMap: pass to AfterNothing"
+                        workAfterNothing myId myQi subscribers buffer
                 Request ssId (Just n) -> do
                     -- Aumento la cantidad de datos que pidio ese subscriptor. Si hay datos en el buffer y no hay subscriptor con 0 les envio datos.
-                    undefined
+                    let auxSubs = addReqToSub ssId n subscribers
+                        minReq = min (Buffer.length buffer) (minSubReq auxSubs)
+                    newBuffer <- sendToSubscribers myId subscribers minReq buffer
+                    let newSubs = removeReqToSubs minReq auxSubs
+                        toAsk = minSubReq newSubs
+                    when (toAsk > 0) (writeQueue inQi (Request myId (Just toAsk)))
+                    work myId myQi newSubs newBuffer
                 Subscrip ssId sf sqI -> do
-                    -- Agrega un nuevo subscriptor.
-                    undefined
+                    work myId myQi (addSub ssId (Subscription 0 sf sqI) subscribers) buffer
                 DeSubscrip ssId -> do
                     -- Se desubscribe al correspondiente. Si ya no se tienen subscriptores se envia una desubscripcion hacia atras.
-                    undefined
+                    let newSubscribers = removeSub ssId subscribers
+                    if (nullSet newSubscribers) then
+                        writeQueue inQi (DeSubscrip myId)
+                    else
+                        work myId myQi newSubscribers buffer
+
+        workAfterNothing myId myQi subscribers buffer = do
+            msg <- readQueue myQi
+            traceM $ "sMap: received message on AfterNothing state: (" ++ show msg ++ ")"
+            case msg of
+                Data _ _ -> error "Unexpected Data message in state AfterNothing on sMap"
+                Request ssId (Just n) -> do
+                    let auxSubs = addReqToSub ssId n subscribers
+                        minReq = min (Buffer.length buffer) (minSubReq auxSubs)
+                    newBuffer <- sendToSubscribers myId subscribers minReq buffer
+                    if (Buffer.null newBuffer) then do
+                        sendNothing myId subscribers
+                    else do
+                        let newSubs = removeReqToSubs minReq auxSubs
+                        workAfterNothing myId myQi newSubs newBuffer
+                Subscrip _ _ _ -> error "Unexpected Subscrip message in state AfterNothing on sMap"
+                DeSubscrip ssId -> do
+                    -- Se desubscribe al correspondiente. Si ya no se tienen subscriptores se envia una desubscripcion hacia atras.
+                    let newSubscribers = removeSub ssId subscribers
+                    if (nullSet newSubscribers) then
+                        writeQueue inQi (DeSubscrip myId)
+                    else
+                        workAfterNothing myId myQi newSubscribers buffer
+
+        sendToSubscribers myId subscribers n buffer = 
+            if (n > 0) then do
+                let (Just d, newBuffer) = Buffer.popBack buffer
+                sendData myId d subscribers
+                sendToSubscribers myId subscribers (n-1) newBuffer
+            else
+                return buffer
 
         
 
@@ -173,7 +255,7 @@ sJoin :: S a1 b1 -> S a2 b2 -> IO (S (Either b1 b2) (b1, b2))
 sJoin = undefined
 
 -- El reduce no genera un hilo, esto supongo que esta bien si hay un unico reduce.
-sReduce :: (a -> b -> b) -> b -> S x a -> IO b
+sReduce :: Show a => (a -> b -> b) -> b -> S x a -> IO b
 sReduce f z (S inId inQi) = do
     -- Create new S
     sId <- nextRandom
@@ -191,6 +273,7 @@ sReduce f z (S inId inQi) = do
             work s acc 10
         work s @ (S sId qi) acc reqData = do
             msg <- readQueue qi
+            traceM $ "sReduce: received message: (" ++ show msg ++ ")"
             case msg of
                 Data ssId (Just d) -> do
 --                    putStrLn "sReduce Just"

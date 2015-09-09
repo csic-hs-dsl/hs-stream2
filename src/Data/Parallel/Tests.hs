@@ -108,8 +108,8 @@ case8 input1 input2 cond = do
     assertEquals expected (reverse result)
 
 tests = [
-    case1 [1, 2, 3, 4, 5]
---    ,case2 [1, 2, 3, 4, 5]
+    case1 [1, 2, 3, 4, 5],
+    case2 [1, 2, 3, 4, 5]
 --    ,case3 [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 --    ,case3 [1, 2 ..]
 --    ,case4 [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]

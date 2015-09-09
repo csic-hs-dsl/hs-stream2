@@ -181,7 +181,7 @@ sMap fun (S inId inQi) = do
                 Data _ (Just d) -> do
                     -- Aplico la funcion, lo guardo en un buffer, y si hay subscriptores que pidieron datos enviarselos.
                     let auxBuffer = Buffer.pushFront buffer (fun d)
-                        minReq = min (Buffer.length buffer) (minSubReq subscribers)
+                        minReq = min (Buffer.length auxBuffer) (minSubReq subscribers)
                     newBuffer <- sendToSubscribers myId subscribers minReq auxBuffer
                     let newSubs = removeReqToSubs minReq subscribers
                     work myId myQi newSubs newBuffer

@@ -2,6 +2,7 @@ module Tests where
 
 import Data.Parallel.HsStream
 
+
 assertEquals :: (Eq a, Show a) => a -> a -> IO ()
 assertEquals expected result = if (expected == result) 
     then putStrLn " - OK"
@@ -44,7 +45,7 @@ case2 input = do
 
 case3 input = do
     putStrLn "unfold -> until -> fold"
-    let expected = input
+    let expected = takeUntil (+) 0 (>10) input
     let (f, z) = toUnfold input
     s1 <- sUnfold f z
     s2 <- sUntil (+) 0 (>10) s1
@@ -109,10 +110,10 @@ case8 input1 input2 cond = do
 
 tests = [
     case1 [1, 2, 3, 4, 5],
-    case2 [1, 2, 3, 4, 5]
---    ,case3 [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
---    ,case3 [1, 2 ..]
---    ,case4 [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    case2 [1, 2, 3, 4, 5],
+    case3 [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    case3 [1, 2 ..],
+    case4 [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 --    ,case5 [1, 2, 3, 4, 5] [6, 7, 8, 9, 10]
 --    ,case6 [1, 2 ..]
 --    ,case7 [1, 2 ..]
@@ -124,4 +125,8 @@ tests = [
 --    ,case8 [1, 3 ..] [2, 4, 6, 8, 10, 12] (> 1000)
     ]
     
-testAll = sequence tests
+testAll = do
+    putStrLn "Running tests ..."
+    res <- sequence tests
+    putStrLn "Tests finished"
+

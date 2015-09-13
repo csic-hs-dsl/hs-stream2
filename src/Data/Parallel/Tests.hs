@@ -1,30 +1,13 @@
 module Tests where
 
 import Data.Parallel.HsStream
+import Data.Parallel.Utils
 
 
 assertEquals :: (Eq a, Show a) => a -> a -> IO ()
 assertEquals expected result = if (expected == result) 
     then putStrLn " - OK"
     else error $ " - ERROR: '" ++ show expected ++ "' not equals to '" ++ show result ++ "'"
-
--- Esta sería la idea del sUntil? Creo que no es como lo veníamos haciendo, pero no recuerdo porque
-takeUntil :: (c -> b -> c) -> c -> (c -> Bool) -> [b] -> [b]
-takeUntil f z cond []     = []
-takeUntil f z cond (a:as) = 
-    if cond z 
-        then
-            []
-        else
-            let z' = f z a
-            in (a : takeUntil f z' cond as)
-
-toUnfold :: [a] -> ([a] -> Maybe (a, [a]), [a])
-toUnfold l = (f, z)
-    where 
-        f []     = Nothing
-        f (a:as) = Just (a, as)
-        z = l
         
 case1 input = do
     putStrLn "unfold -> fold"

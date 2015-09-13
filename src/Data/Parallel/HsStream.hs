@@ -12,7 +12,6 @@
 
 module Data.Parallel.HsStream where
 
-
 import qualified Data.Sequence as S
 import Data.Foldable (mapM_, foldlM, foldl, traverse_)
 import Data.Maybe (isJust, fromJust)

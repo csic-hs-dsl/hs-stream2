@@ -253,23 +253,28 @@ sFilter filFun (S inId inQi) = do
     -- Send subcribe message to inQi
     writeQueue inQi (Subscrip myId Prelude.id myQi)
     -- Do my work
-    forkIO $ work myId myQi emptySet emtpyBuffer
+    forkIO $ work myId myQi emptySet emtpyBuffer 0
     return $ S myId myQi
     where 
-        work myId myQi subscribers buffer = do
+        work myId myQi subscribers buffer toReceive = do
             msg <- readQueue myQi
             traceM $ "sFilter: received message on work state: (" ++ show msg ++ ")"
             case msg of
-                Data _ (Just d) ->
+                Data _ (Just d) -> do
                     -- Aplico la funcion de filtro y si pasa el filtro guado el dato en el buffer, y si hay subscriptores que pidieron datos enviarselos.
-                    if (filFun d) then do
-                        let auxBuffer = Buffer.pushFront buffer d
-                            minReq = min (Buffer.length auxBuffer) (minSubReq subscribers)
-                        newBuffer <- sendToSubscribers myId subscribers minReq auxBuffer
-                        let newSubs = removeReqToSubs minReq subscribers
-                        work myId myQi newSubs newBuffer
-                    else do
-                        work myId myQi subscribers buffer
+                    (newBuffer, newSubs) <- if (filFun d) 
+                        then do
+                            let auxBuffer = Buffer.pushFront buffer d
+                                minReq = min (Buffer.length auxBuffer) (minSubReq subscribers)
+                            newBuffer <- sendToSubscribers myId subscribers minReq auxBuffer
+                            let newSubs = removeReqToSubs minReq subscribers
+                            return (newBuffer, newSubs)
+                        else do
+                            return (buffer, subscribers) 
+                    let toAsk = if (toReceive > 1) then 0 else minSubReq newSubs
+                        newToReceive = toReceive - 1 + toAsk
+                    when (toAsk > 0) (writeQueue inQi (Request myId (Just toAsk)))
+                    work myId myQi newSubs newBuffer newToReceive
                 Data _ Nothing -> do
                     if (Buffer.null buffer) then
                         -- Si no hay nada en el buffer, se envia Nothing y se termina el hilo.
@@ -286,16 +291,16 @@ sFilter filFun (S inId inQi) = do
                     let newSubs = removeReqToSubs minReq auxSubs
                         toAsk = minSubReq newSubs
                     when (toAsk > 0) (writeQueue inQi (Request myId (Just toAsk)))
-                    work myId myQi newSubs newBuffer
+                    work myId myQi newSubs newBuffer (toReceive + toAsk)
                 Subscrip ssId sf sqI -> do
-                    work myId myQi (addSub ssId (Subscription 0 sf sqI) subscribers) buffer
+                    work myId myQi (addSub ssId (Subscription 0 sf sqI) subscribers) buffer toReceive
                 DeSubscrip ssId -> do
                     -- Se desubscribe al correspondiente. Si ya no se tienen subscriptores se envia una desubscripcion hacia atras.
                     let newSubscribers = removeSub ssId subscribers
                     if (nullSet newSubscribers) then
                         writeQueue inQi (DeSubscrip myId)
                     else
-                        work myId myQi newSubscribers buffer
+                        work myId myQi newSubscribers buffer toReceive
 
         workAfterNothing myId myQi subscribers buffer = do
             msg <- readQueue myQi

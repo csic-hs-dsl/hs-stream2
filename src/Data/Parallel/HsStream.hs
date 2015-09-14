@@ -101,8 +101,8 @@ type SQueue a b = Queue (QData a b)
 data S a b = S StreamId (SQueue a b)
 
 
-emtpyBuffer :: Buffer.BankersDequeue a
-emtpyBuffer = Buffer.empty
+emptyBuffer :: Buffer.BankersDequeue a
+emptyBuffer = Buffer.empty
 
 -- TODO: Ver si son necesarias:
 emptySet = Map.empty
@@ -173,7 +173,7 @@ sMap fun (S inId inQi) = do
     -- Send subcribe message to inQi
     writeQueue inQi (Subscrip myId Prelude.id myQi)
     -- Do my work
-    forkIO $ work myId myQi emptySet emtpyBuffer
+    forkIO $ work myId myQi emptySet emptyBuffer
     return $ S myId myQi
     where 
         work myId myQi subscribers buffer = do
@@ -253,7 +253,7 @@ sFilter filFun (S inId inQi) = do
     -- Send subcribe message to inQi
     writeQueue inQi (Subscrip myId Prelude.id myQi)
     -- Do my work
-    forkIO $ work myId myQi emptySet emtpyBuffer 0
+    forkIO $ work myId myQi emptySet emptyBuffer 0
     return $ S myId myQi
     where 
         work myId myQi subscribers buffer toReceive = do
@@ -340,7 +340,7 @@ sUntil accFun seed test (S inId inQi)= do
     -- Send subcribe message to inQi
     writeQueue inQi (Subscrip myId Prelude.id myQi)
     -- Do my work
-    forkIO $ work myId myQi emptySet emtpyBuffer seed
+    forkIO $ work myId myQi emptySet emptyBuffer seed
     return $ S myId myQi
     where 
         work myId myQi subscribers buffer currAcc = do
@@ -426,8 +426,175 @@ sUntil accFun seed test (S inId inQi)= do
                 return buffer
 
 
-sJoin :: S a1 b1 -> S a2 b2 -> IO (S (Either b1 b2) (b1, b2))
-sJoin = undefined
+sJoin :: (Show b1, Show b2) => S a1 b1 -> S a2 b2 -> IO (S (Either b1 b2) (b1, b2))
+sJoin (S inIdL inQiL) (S inIdR inQiR) = do
+    -- Create new S
+    myId <- nextRandom
+    myQi <- newQueue
+    -- Send subcribe message to my producers:
+    writeQueue inQiL (Subscrip myId Prelude.Left myQi)
+    writeQueue inQiR (Subscrip myId Prelude.Right myQi)
+    -- Do my work
+    forkIO $ work myId myQi emptySet emptyBuffer emptyBuffer
+    return $ S myId myQi
+    where 
+        work myId myQi subscribers buffL buffR = do
+            msg <- readQueue myQi
+            traceM $ "sJoin: received message on work state: (" ++ show msg ++ ")"
+            case msg of
+                Data _ (Just (Left d)) -> do
+                    -- Lo agrego al buffL y veo si puedo enviar mensajes:
+                    let auxBuffL = Buffer.pushFront buffL d
+                    (newSubs, newBuffL, newBuffR) <- sendToSubscribers myId subscribers auxBuffL buffR
+                    work myId myQi newSubs newBuffL newBuffR
+                Data _ (Just (Right d)) -> do
+                    -- Lo agrego al buffL y veo si puedo enviar mensajes:
+                    let auxBuffR = Buffer.pushFront buffR d
+                    (newSubs, newBuffL, newBuffR) <- sendToSubscribers myId subscribers buffL auxBuffR
+                    work myId myQi newSubs newBuffL newBuffR
+                Data ssId Nothing ->
+                    if ((ssId == inIdL) && (not $ Buffer.null buffL)) then do
+                        traceM "sJoin: pass to AfterNothing Left"
+                        workAfterNothingL myId myQi subscribers buffL buffR
+                    else if ((ssId == inIdR) && (not $ Buffer.null buffR)) then do
+                        traceM "sJoin: pass to AfterNothing Right"
+                        workAfterNothingR myId myQi subscribers buffL buffR
+                    else do
+                        sendNothing myId subscribers
+                Request ssId (Just n) -> do
+                    -- Aumento la cantidad de datos que pidio ese subscriptor. Si hay datos en el buffer y no hay subscriptor con 0 les envio datos.
+                    let auxSubs = addReqToSub ssId n subscribers
+                    (newSubs, newBuffL, newBuffR) <- sendToSubscribers myId auxSubs buffL buffR
+                    let toAsk = minSubReq newSubs
+                    when (toAsk > 0) (writeQueue inQiL (Request myId (Just toAsk)) >> writeQueue inQiR (Request myId (Just toAsk)))
+                    work myId myQi newSubs newBuffL newBuffR
+                Subscrip ssId sf sqI -> do
+                    work myId myQi (addSub ssId (Subscription 0 sf sqI) subscribers) buffL buffR
+                DeSubscrip ssId -> do
+                    -- Se desubscribe al correspondiente. Si ya no se tienen subscriptores se envia una desubscripcion hacia atras.
+                    let newSubscribers = removeSub ssId subscribers
+                    if (nullSet newSubscribers) then do
+                        writeQueue inQiL (DeSubscrip myId)
+                        writeQueue inQiR (DeSubscrip myId)
+                    else
+                        work myId myQi newSubscribers buffL buffR
+        workAfterNothingL myId myQi subscribers buffL buffR = do
+            msg <- readQueue myQi
+            traceM $ "sJoin: received message on AfterNothingL state: (" ++ show msg ++ ")"
+            case msg of
+                Data _ (Just (Right d)) -> do
+                    -- Lo agrego al buffL y veo si puedo enviar mensajes:
+                    let auxBuffR = Buffer.pushFront buffR d
+                    (newSubs, newBuffL, newBuffR) <- sendToSubscribers myId subscribers buffL auxBuffR
+                    if (Buffer.null newBuffL) then do
+                        sendNothing myId subscribers
+                    else do
+                        workAfterNothingL myId myQi newSubs newBuffL newBuffR
+                Data _ Nothing ->
+                    if (not $ Buffer.null buffR) then do
+                        traceM "sJoin: pass to AfterNothing Both"
+                        workAfterNothingB myId myQi subscribers buffL buffR
+                    else do
+                        sendNothing myId subscribers
+                Request ssId (Just n) -> do
+                    let auxSubs = addReqToSub ssId n subscribers
+                    (newSubs, newBuffL, newBuffR) <- sendToSubscribers myId auxSubs buffL buffR
+                    if (Buffer.null newBuffL) then do
+                        sendNothing myId subscribers
+                    else do
+                        let toAsk = minSubReq newSubs
+                        when (toAsk > 0) (writeQueue inQiL (Request myId (Just toAsk)) >> writeQueue inQiR (Request myId (Just toAsk)))
+                        workAfterNothingL myId myQi newSubs newBuffL newBuffR
+                Subscrip ssId sf sqI -> do
+                    workAfterNothingL myId myQi (addSub ssId (Subscription 0 sf sqI) subscribers) buffL buffR
+                DeSubscrip ssId -> do
+                    -- Se desubscribe al correspondiente. Si ya no se tienen subscriptores se envia una desubscripcion hacia atras.
+                    let newSubscribers = removeSub ssId subscribers
+                    if (nullSet newSubscribers) then do
+                        writeQueue inQiL (DeSubscrip myId)
+                        writeQueue inQiR (DeSubscrip myId)
+                    else
+                        workAfterNothingL myId myQi newSubscribers buffL buffR
+
+        workAfterNothingR myId myQi subscribers buffL buffR = do
+            msg <- readQueue myQi
+            traceM $ "sJoin: received message on AfterNothingR state: (" ++ show msg ++ ")"
+            case msg of
+                Data _ (Just (Left d)) -> do
+                    -- Lo agrego al buffL y veo si puedo enviar mensajes:
+                    let auxBuffL = Buffer.pushFront buffL d
+                    (newSubs, newBuffL, newBuffR) <- sendToSubscribers myId subscribers auxBuffL buffR
+                    if (Buffer.null newBuffR) then do
+                        sendNothing myId subscribers
+                    else do
+                        workAfterNothingR myId myQi newSubs newBuffL newBuffR
+                Data _ Nothing ->
+                    if (not $ Buffer.null buffL) then do
+                        traceM "sJoin: pass to AfterNothing Both"
+                        workAfterNothingB myId myQi subscribers buffL buffR
+                    else do
+                        sendNothing myId subscribers
+                Request ssId (Just n) -> do
+                    let auxSubs = addReqToSub ssId n subscribers
+                    (newSubs, newBuffL, newBuffR) <- sendToSubscribers myId auxSubs buffL buffR
+                    if (Buffer.null newBuffR) then do
+                        sendNothing myId subscribers
+                    else do
+                        let toAsk = minSubReq newSubs
+                        when (toAsk > 0) (writeQueue inQiL (Request myId (Just toAsk)) >> writeQueue inQiR (Request myId (Just toAsk)))
+                        workAfterNothingR myId myQi newSubs newBuffL newBuffR
+                Subscrip ssId sf sqI -> do
+                    workAfterNothingR myId myQi (addSub ssId (Subscription 0 sf sqI) subscribers) buffL buffR
+                DeSubscrip ssId -> do
+                    -- Se desubscribe al correspondiente. Si ya no se tienen subscriptores se envia una desubscripcion hacia atras.
+                    let newSubscribers = removeSub ssId subscribers
+                    if (nullSet newSubscribers) then do
+                        writeQueue inQiL (DeSubscrip myId)
+                        writeQueue inQiR (DeSubscrip myId)
+                    else
+                        workAfterNothingR myId myQi newSubscribers buffL buffR
+
+        workAfterNothingB myId myQi subscribers buffL buffR = do
+            msg <- readQueue myQi
+            traceM $ "sJoin: received message on AfterNothingB state: (" ++ show msg ++ ")"
+            case msg of
+                Data _ _ -> traceM $ "sJoin: Unexpected Data message in state AfterNothing on sUntil. Ignoring it!"
+                Request ssId (Just n) -> do
+                    let auxSubs = addReqToSub ssId n subscribers
+                    (newSubs, newBuffL, newBuffR) <- sendToSubscribers myId auxSubs buffL buffR
+                    if (Buffer.null newBuffL || Buffer.null newBuffR) then do
+                        sendNothing myId subscribers
+                    else do
+                        let toAsk = minSubReq newSubs
+                        when (toAsk > 0) (writeQueue inQiL (Request myId (Just toAsk)) >> writeQueue inQiR (Request myId (Just toAsk)))
+                        workAfterNothingB myId myQi newSubs newBuffL newBuffR
+                Subscrip ssId sf sqI -> do
+                    workAfterNothingB myId myQi (addSub ssId (Subscription 0 sf sqI) subscribers) buffL buffR
+                DeSubscrip ssId -> do
+                    -- Se desubscribe al correspondiente. Si ya no se tienen subscriptores se envia una desubscripcion hacia atras.
+                    let newSubscribers = removeSub ssId subscribers
+                    if (nullSet newSubscribers) then do
+                        writeQueue inQiL (DeSubscrip myId)
+                        writeQueue inQiR (DeSubscrip myId)
+                    else
+                        workAfterNothingB myId myQi newSubscribers buffL buffR
+
+        sendToSubscribers myId subscribers buffL buffR = do
+            let minReq = minimum [Buffer.length buffL, Buffer.length buffR, minSubReq subscribers]
+            (newBuffL, newBuffR) <- sendDataToSubscribers myId subscribers buffL buffR minReq
+            let newSubs = removeReqToSubs minReq subscribers
+            return (newSubs, newBuffL, newBuffR)
+
+        sendDataToSubscribers myId subscribers buffL buffR n =
+            if (n > 0) then do
+                let (Just dL, newBuffL) = Buffer.popBack buffL
+                    (Just dF, newBuffR) = Buffer.popBack buffR
+                sendData myId (dL, dF) subscribers
+                sendDataToSubscribers myId subscribers newBuffL newBuffR (n-1)
+            else
+                return (buffL, buffR)
+
+        
 
 -- El reduce no genera un hilo, esto supongo que esta bien si hay un unico reduce.
 sReduce :: Show a => (a -> b -> b) -> b -> S x a -> IO b

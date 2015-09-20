@@ -156,8 +156,9 @@ sUnfold fun seed = do
         genAndWrite s @ (S sId _) timesLeft seed subscribers =
             if (timesLeft > 0) then
                 case fun seed of
-                    Just (d, newSeed) -> do 
-                        traverse_ (\(Subscription _ f sqI) -> writeQueue sqI (Data sId (Just $ f d))) (Map.elems subscribers)
+                    Just (d, newSeed) -> do
+                        res <- evaluate d 
+                        traverse_ (\(Subscription _ f sqI) -> writeQueue sqI (Data sId (Just $ f res))) (Map.elems subscribers)
                         genAndWrite s (timesLeft-1) newSeed subscribers
                     Nothing -> do
                         traverse_ (\(Subscription _ _ sqI) -> writeQueue sqI (Data sId (Nothing))) (Map.elems subscribers)
@@ -182,7 +183,8 @@ sMap fun (S inId inQi) = do
             case msg of
                 Data _ (Just d) -> do
                     -- Aplico la funcion, lo guardo en un buffer, y si hay subscriptores que pidieron datos enviarselos.
-                    let auxBuffer = Buffer.pushFront buffer (fun d)
+                    res <- evaluate (fun d)
+                    let auxBuffer = Buffer.pushFront buffer res
                         minReq = min (Buffer.length auxBuffer) (minSubReq subscribers)
                     newBuffer <- sendToSubscribers myId subscribers minReq auxBuffer
                     let newSubs = removeReqToSubs minReq subscribers

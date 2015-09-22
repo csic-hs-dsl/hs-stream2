@@ -1,4 +1,4 @@
-module KMeans where
+module Data.Parallel.KMeans where
 
 import Data.Parallel.HsStream
 import Data.Parallel.Utils

@@ -1,4 +1,4 @@
-module Tests where
+module Data.Parallel.Tests where
 
 import Data.Parallel.HsStream
 import Data.Parallel.Utils

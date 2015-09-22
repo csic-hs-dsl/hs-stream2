@@ -6,6 +6,12 @@ toUnfold l = (f, z)
         f []     = Nothing
         f (a:as) = Just (a, as)
         z = l
+
+chunkUnfold ::  Int -> (s -> Maybe (d, s), s) -> (s -> Maybe ([d], s), s)
+chunkUnfold chunk (f, s) = (f' chunk, s)
+    where 
+        f' 0 s = undefined
+        f' n s = undefined
         
 -- Esta sería la idea del sUntil? Creo que no es como lo veníamos haciendo, pero no recuerdo porque
 takeUntil :: (c -> b -> c) -> c -> (c -> Bool) -> [b] -> [b]

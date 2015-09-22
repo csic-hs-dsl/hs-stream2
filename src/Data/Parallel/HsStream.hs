@@ -32,10 +32,10 @@ import qualified Control.Concurrent.Chan.Unagi as UQ
 import qualified Control.Concurrent.Chan.Unagi.Bounded as BQ 
 
 
-import Debug.Trace (traceM)
+--import Debug.Trace (traceM)
 -- Comment the import and uncomment the next function to turn off the debug
---traceM :: String -> IO ()
---traceM _ = return ()
+traceM :: String -> IO ()
+traceM _ = return ()
 
 
 ---------------- QUEUE ----------------

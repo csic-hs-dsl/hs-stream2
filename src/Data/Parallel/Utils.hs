@@ -23,3 +23,11 @@ takeUntil f z cond (a:as) =
         else
             let z' = f z a
             in (a : takeUntil f z' cond as)
+
+doNothing :: Integer -> Integer
+doNothing n = doNothing' 0 n
+            
+doNothing' :: Integer -> Integer -> Integer
+doNothing' i n = if i >= n 
+    then n
+    else doNothing' (i + 1) n

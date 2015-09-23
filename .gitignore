@@ -16,3 +16,7 @@ cabal.sandbox.config
 *.hp
 
 src/Data/Parallel/KMeans
+
+src/Data/Parallel/DoNothing1
+
+src/Data/Parallel/DoNothing2

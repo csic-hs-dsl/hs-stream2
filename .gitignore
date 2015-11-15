@@ -15,8 +15,12 @@ cabal.sandbox.config
 *.aux
 *.hp
 
-src/Data/Parallel/KMeans
+src/Data/Parallel/HsStream/Examples/KMeans
 
-src/Data/Parallel/DoNothing1
+src/Data/Parallel/HsStream/Examples/DoNothing1
 
-src/Data/Parallel/DoNothing2
+src/Data/Parallel/HsStream/Examples/DoNothing2
+
+src/Data/Parallel/HsStream/Examples/DoNothingDSL1
+
+src/Data/Parallel/HsStream/Examples/DoNothingIO21

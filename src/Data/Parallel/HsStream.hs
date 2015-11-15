@@ -336,7 +336,7 @@ sFilter filFun (S inId inQi) = do
                 return buffer
 
 sUntil :: (Show b, Show c) => (c -> b -> c) -> c -> (c -> Bool) -> S a b -> IO (S b b)
-sUntil accFun seed test (S inId inQi)= do
+sUntil accFun seed test (S inId inQi) = do
     myId <- nextRandom
     myQi <- newQueue
     -- Send subcribe message to inQi

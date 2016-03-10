@@ -22,9 +22,9 @@ data tail :. head = !tail :. !head deriving (Show, Read, Eq, Ord)
 -- Tener cuidado en la implementación: Porque antes usábamos Until?
 -- Estaría bueno poder hacer merge sort
 data Stream a b where
-    StrMapState     :: s -> (s -> a -> (Maybe [b], s)) -> Stream a b
+    StrMapState     :: s -> (s -> a -> ([b], s)) -> Stream a b
     StrLink         :: Stream a b -> Stream b c -> Stream a c
-    StrJoin         :: s -> (s -> (ReadFrom, s)) -> (s -> DataFrom b d -> (Maybe [e], s)) -> Stream a b -> Stream c d -> Stream (a, c) e
+    StrJoin         :: s -> (s -> (ReadFrom, s)) -> (s -> DataFrom b d -> ([e], s)) -> Stream a b -> Stream c d -> Stream (a, c) e
     StrLoop         :: (a -> b) -> (b -> Bool) -> Stream (a, b) (c, b) -> Stream a c
     StrFilterState  :: s -> (s -> b -> (Bool, s)) -> Stream b b
     StrWhile        :: s -> (s -> b -> s) -> (s -> Bool) -> Stream b b
@@ -33,10 +33,10 @@ data ReadFrom = ReadFromLeft | ReadFromRight | ReadFromBoth
 data DataFrom a b = DataFromLeft a | DataFromRight b | DataFromBoth a b
 
 strJoin :: Stream a b -> Stream c d -> Stream (a, c) (b, d)
-strJoin = StrJoin () (\s -> (ReadFromBoth, s)) (\s (DataFromBoth b d) -> (Just [(b, d)], s))
+strJoin = StrJoin () (\s -> (ReadFromBoth, s)) (\s (DataFromBoth b d) -> ([(b, d)], s))
 
 strMap :: (a -> b) -> Stream a b
-strMap f = StrMapState () (\_ a -> (Just $ [f a], ()))
+strMap f = StrMapState () (\_ a -> ([f a], ()))
 
 strFilter :: (b -> Bool) -> Stream b b
 strFilter f = StrFilterState () (\_ b -> (f b, ()))
@@ -54,6 +54,7 @@ while (cond(b)) {
 -- Ver si podemos tener generadores que se creen de distinta forma, y que 
 -- haya un reduce, de forma que la salida también sea un generador
 runStream :: Stream a b -> [a] -> [b]
+runStream = undefined
 
 -- Ejemplos 
 
@@ -73,6 +74,14 @@ ej2 = StrLink ej1 $ strFilter isPrime
 -- Primeros N Fibonacci Primes
 ej3 :: Int -> Stream () Int
 ej3 n = StrLink ej2 $ StrWhile 0 (\s _ -> s + 1) (<= n)
+
+
+-- Merge sorted
+-- Pre: the streams are sorted
+--ej4 :: Stream a b -> Stream a b -> Stream a b
+--ej4 sA sB = 
+
+
 
 {-
 class Stream s a b | s -> a b

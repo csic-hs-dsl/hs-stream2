@@ -24,7 +24,7 @@ data tail :. head = !tail :. !head deriving (Show, Read, Eq, Ord)
 data Stream a b where
     StrMapState     :: s -> (s -> a -> ([b], s)) -> Stream a b
     StrLink         :: Stream a b -> Stream b c -> Stream a c
-    StrJoin         :: s -> (s -> (ReadFrom, s)) -> (s -> DataFrom b d -> ([e], s)) -> Stream a b -> Stream c d -> Stream (a, c) e
+    StrJoin         :: s -> ReadFrom -> (s -> DataFrom b d -> ([e], ReadFrom, s)) -> Stream a b -> Stream c d -> Stream (a, c) e
     StrLoop         :: (a -> b) -> (b -> Bool) -> Stream (a, b) (c, b) -> Stream a c
     StrFilterState  :: s -> (s -> b -> (Bool, s)) -> Stream b b
     StrWhile        :: s -> (s -> b -> s) -> (s -> Bool) -> Stream b b
@@ -33,7 +33,7 @@ data ReadFrom = ReadFromLeft | ReadFromRight | ReadFromBoth
 data DataFrom a b = DataFromLeft a | DataFromRight b | DataFromBoth a b
 
 strJoin :: Stream a b -> Stream c d -> Stream (a, c) (b, d)
-strJoin = StrJoin () (\s -> (ReadFromBoth, s)) (\s (DataFromBoth b d) -> ([(b, d)], s))
+strJoin = StrJoin () ReadFromBoth (\s (DataFromBoth b d) -> ([(b, d)], ReadFromBoth, s))
 
 strMap :: (a -> b) -> Stream a b
 strMap f = StrMapState () (\_ a -> ([f a], ()))
@@ -78,10 +78,17 @@ ej3 n = StrLink ej2 $ StrWhile 0 (\s _ -> s + 1) (<= n)
 
 -- Merge sorted
 -- Pre: the streams are sorted
---ej4 :: Stream a b -> Stream a b -> Stream a b
---ej4 sA sB = 
+ej4 :: (Ord b) => Stream a b -> Stream c b -> Stream (a, c) b
+ej4 sA sB = StrJoin stInit rfInit stExec sA sB
+    where
+        stInit = (Nothing, Nothing)
+        rfInit = ReadFromBoth
+        stExec (Nothing, Nothing) (DataFromBoth l r) = ([min l r], if l <= r then ReadFromLeft else ReadFromRight, (Just l, Just r))
+        stExec (_, Just r) (DataFromLeft l) = ([min l r], if l <= r then ReadFromLeft else ReadFromRight, (Just l, Just r))
+        stExec (Just l, _) (DataFromRight r) = ([min l r], if l <= r then ReadFromLeft else ReadFromRight, (Just l, Just r))
+        
 
-
+--StrJoin         :: s -> ReadFrom -> (s -> DataFrom b d -> ([e], ReadFrom, s)) -> Stream a b -> Stream c d -> Stream (a, c) e
 
 {-
 class Stream s a b | s -> a b

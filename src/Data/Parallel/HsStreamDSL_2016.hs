@@ -24,16 +24,22 @@ data tail :. head = !tail :. !head deriving (Show, Read, Eq, Ord)
 data Stream a b where
     StrMapState     :: s -> (s -> a -> ([b], s)) -> Stream a b
     StrLink         :: Stream a b -> Stream b c -> Stream a c
-    StrJoin         :: s -> ReadFrom -> (s -> DataFrom b d -> ([e], ReadFrom, s)) -> Stream a b -> Stream c d -> Stream (a, c) e
+    StrJoin         :: s -> ReadFrom -> (s -> DataFrom b d -> ([e], ReadFrom, s)) -> Stream a b -> Stream c d -> Stream (Either a c) e
     StrLoop         :: (a -> b) -> (b -> Bool) -> Stream (a, b) (c, b) -> Stream a c
     StrFilterState  :: s -> (s -> b -> (Bool, s)) -> Stream b b
     StrWhile        :: s -> (s -> b -> s) -> (s -> Bool) -> Stream b b
 
-data ReadFrom = ReadFromLeft | ReadFromRight | ReadFromBoth
-data DataFrom a b = DataFromLeft a | DataFromRight b | DataFromBoth a b
+data ReadFrom = ReadFromLeft | ReadFromRight
+data DataFrom a b = DataFromLeft (Maybe a) | DataFromRight (Maybe b)
 
-strJoin :: Stream a b -> Stream c d -> Stream (a, c) (b, d)
-strJoin = StrJoin () ReadFromBoth (\s (DataFromBoth b d) -> ([(b, d)], ReadFromBoth, s))
+strJoin :: Stream a b -> Stream c d -> Stream (Either a c) (b, d)
+strJoin = StrJoin Nothing ReadFromLeft stExec
+    where 
+        stExec Nothing (DataFromLeft (Just l)) = ([], ReadFromRight, Just l)
+        stExec (Just l) (DataFromRight (Just r)) = ([(l, r)], ReadFromLeft, Nothing)
+        stExec _ (DataFromLeft Nothing) = ([], ReadFromLeft, Nothing)
+        stExec _ (DataFromRight Nothing) = ([], ReadFromRight, Nothing)
+
 
 strMap :: (a -> b) -> Stream a b
 strMap f = StrMapState () (\_ a -> ([f a], ()))
@@ -78,15 +84,19 @@ ej3 n = StrLink ej2 $ StrWhile 0 (\s _ -> s + 1) (<= n)
 
 -- Merge sorted
 -- Pre: the streams are sorted
-ej4 :: (Ord b) => Stream a b -> Stream c b -> Stream (a, c) b
+data Depleted = NoneDepleted | LeftDepleted | RightDepleted
+ej4 :: (Ord b) => Stream a b -> Stream c b -> Stream (Either a c) b
 ej4 sA sB = StrJoin stInit rfInit stExec sA sB
     where
-        stInit = (Nothing, Nothing)
-        rfInit = ReadFromBoth
-        stExec (Nothing, Nothing) (DataFromBoth l r) = ([min l r], if l <= r then ReadFromLeft else ReadFromRight, (Just l, Just r))
-        stExec (_, Just r) (DataFromLeft l) = ([min l r], if l <= r then ReadFromLeft else ReadFromRight, (Just l, Just r))
-        stExec (Just l, _) (DataFromRight r) = ([min l r], if l <= r then ReadFromLeft else ReadFromRight, (Just l, Just r))
+        stInit = (Nothing, Nothing, NoneDepleted)
+        rfInit = ReadFromLeft
+        stExec (Nothing, Nothing, NoneDepleted) (DataFromLeft (Just l)) = ([], ReadFromRight, (Just l, Nothing, NoneDepleted))
+        stExec (Just l, Nothing, NoneDepleted) (DataFromRight (Just r)) = ([min l r], if l <= r then ReadFromLeft else ReadFromRight, (Just l, Just r, NoneDepleted))
+        stExec (_, Just r, NoneDepleted) (DataFromLeft (Just l)) = ([min l r], if l <= r then ReadFromLeft else ReadFromRight, (Just l, Just r, NoneDepleted))
+        stExec (Just l, _, NoneDepleted) (DataFromRight (Just r)) = ([min l r], if l <= r then ReadFromLeft else ReadFromRight, (Just l, Just r, NoneDepleted))
         
+  --      stExec (Nothing, Nothing, NoneDepleted) (DataFromLeft Nothing) = ([], ReadFromRight, (Just l, Nothing, LeftDepleted))
+--        stExec (Just l, Nothing, LeftDepleted) (DataFromRight (Just r)) = ([min l r, max l r], ReadFromRight, (Nothing, Nothing, LeftDepleted))
 
 --StrJoin         :: s -> ReadFrom -> (s -> DataFrom b d -> ([e], ReadFrom, s)) -> Stream a b -> Stream c d -> Stream (a, c) e
 

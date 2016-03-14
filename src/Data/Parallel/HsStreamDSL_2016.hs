@@ -90,13 +90,27 @@ ej4 sA sB = StrJoin stInit rfInit stExec sA sB
     where
         stInit = (Nothing, Nothing, NoneDepleted)
         rfInit = ReadFromLeft
+        selectRead l r = if l <= r then ReadFromLeft else ReadFromRight
+        leftState l r = if l <= r then Nothing else Just l
+        rightState l r = if l <= r then Just r else Nothing
+
         stExec (Nothing, Nothing, NoneDepleted) (DataFromLeft (Just l)) = ([], ReadFromRight, (Just l, Nothing, NoneDepleted))
-        stExec (Just l, Nothing, NoneDepleted) (DataFromRight (Just r)) = ([min l r], if l <= r then ReadFromLeft else ReadFromRight, (Just l, Just r, NoneDepleted))
-        stExec (_, Just r, NoneDepleted) (DataFromLeft (Just l)) = ([min l r], if l <= r then ReadFromLeft else ReadFromRight, (Just l, Just r, NoneDepleted))
-        stExec (Just l, _, NoneDepleted) (DataFromRight (Just r)) = ([min l r], if l <= r then ReadFromLeft else ReadFromRight, (Just l, Just r, NoneDepleted))
+        stExec (Nothing, Nothing, NoneDepleted) (DataFromLeft Nothing) = ([], ReadFromRight, (Nothing, Nothing, LeftDepleted))
         
-  --      stExec (Nothing, Nothing, NoneDepleted) (DataFromLeft Nothing) = ([], ReadFromRight, (Just l, Nothing, LeftDepleted))
---        stExec (Just l, Nothing, LeftDepleted) (DataFromRight (Just r)) = ([min l r, max l r], ReadFromRight, (Nothing, Nothing, LeftDepleted))
+        stExec (Nothing, Nothing, LeftDepleted) (DataFromRight (Just r)) = ([r], ReadFromRight, (Nothing, Nothing, LeftDepleted))
+        stExec (Nothing, Nothing, LeftDepleted) (DataFromRight Nothing) = ([], ReadFromRight, (Nothing, Nothing, LeftDepleted)) -- Another read will end the stream!
+        
+        stExec (Nothing, Nothing, RightDepleted) (DataFromLeft (Just l)) = ([l], ReadFromLeft, (Nothing, Nothing, RightDepleted))
+        stExec (Nothing, Nothing, RightDepleted) (DataFromLeft Nothing) = ([], ReadFromLeft, (Nothing, Nothing, RightDepleted)) -- Another read will end the stream!
+
+        stExec (Just l, Nothing, NoneDepleted) (DataFromRight (Just r)) = ([min l r], selectRead l r, (leftState l r, rightState l r, NoneDepleted))
+        stExec (Just l, Nothing, NoneDepleted) (DataFromRight Nothing) = ([l], ReadFromLeft, (Nothing, Nothing, RightDepleted))
+        
+        stExec (Nothing, Just r, NoneDepleted) (DataFromLeft (Just l)) = ([min l r], selectRead l r, (leftState l r, rightState l r, NoneDepleted))
+        stExec (Nothing, Just r, NoneDepleted) (DataFromLeft Nothing) = ([r], ReadFromRight, (Nothing, Nothing, LeftDepleted))
+
+        --stExec (Just l, _, NoneDepleted) (DataFromRight (Just r)) = ([min l r], selectRead l r, (leftState l r, rightState l r, NoneDepleted))
+        --stExec (Just l, _, NoneDepleted) (DataFromRight Nothing) = ([l], ReadFromLeft, (Nothing, Nothing, RightDepleted))
 
 --StrJoin         :: s -> ReadFrom -> (s -> DataFrom b d -> ([e], ReadFrom, s)) -> Stream a b -> Stream c d -> Stream (a, c) e
 

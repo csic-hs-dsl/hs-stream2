@@ -16,6 +16,22 @@ data Z = Z deriving (Show, Read, Eq, Ord)
 infixl 3 :.
 data tail :. head = !tail :. !head deriving (Show, Read, Eq, Ord)
 
+-- Merge sort usando listas
+ms1 :: [Int] -> [Int] -> [Int]
+ms1 [] r = r
+ms1 l [] = l
+ms1 (l:ls) (r:rs) 
+    | l < r      = l:(ms1 ls (r:rs))
+    | otherwise  = r:(ms1 (l:ls) rs)
+
+-- Merge sort usando listas
+ms2 :: [Int] -> [Int] -> [Int]
+ms2 [] r = r
+ms2 l [] = l
+ms2 (l:ls) (r:rs) 
+    | l <= r      = l:(ms2 ls (r:rs))
+    | otherwise  = (ms2 (r:rs) (l:ls))
+
 
 -- Separamos ejecución de definición
 -- Ver si se puede poner una construcción que permita fusionar pasos (para que sean secuenciales en vez de paralelos)

@@ -12,9 +12,9 @@ module Data.Parallel.HsStreamDSL_2016 where
 import Control.Applicative
 import Data.Char
 
-data Z = Z deriving (Show, Read, Eq, Ord)
+data Z = Z
 infixl 3 :.
-data tail :. head = !tail :. !head deriving (Show, Read, Eq, Ord)
+data tail :. head = !tail :. !head
 
 -- Merge sort usando listas
 ms1 :: [Int] -> [Int] -> [Int]
@@ -32,6 +32,33 @@ ms2 (l:ls) (r:rs)
     | l <= r      = l:(ms2 ls (r:rs))
     | otherwise  = (ms2 (r:rs) (l:ls))
 
+-- Podría ser útil una función que lea todos los valores evaluados readEval :: Stream a => [a]
+data Stream a where
+    SNil    :: Stream a
+    SUneval :: Stream a
+    SEval   :: a -> Stream a -> Stream a
+
+data Kernel a b where
+    KMap          :: (Stream a -> (Stream a, [b])) -> Kernel a b
+    KLink         :: Kernel a b -> Kernel b c -> Kernel a c
+    KJoin         :: (Stream b -> Stream d -> (Stream b, Stream d, [e])) -> Kernel a b -> Kernel c d -> Kernel (Either a c) e
+--    KLoop         :: (a -> b) -> (b -> Bool) -> Kernel (a, b) (c, b) -> Kernel a c
+--    KFilter       :: s -> (s -> b -> (Bool, s)) -> Kernel b b
+--    KWhile        :: s -> (s -> b -> s) -> (s -> Bool) -> Kernel b b
+
+mergeSort :: Ord b => Kernel a b -> Kernel c b -> Kernel (Either a c) b
+mergeSort k1 k2 = KJoin kexec k1 k2
+    where 
+        kexec SNil SNil = (SNil, SNil, [])
+        kexec SNil (SEval a as) = (SNil, as, [a])
+        kexec (SEval a as) SNil = (as, SNil, [a])
+        kexec s1@(SEval a as) s2@(SEval b bs) = 
+            if a < b then
+                (as, s2, [a])
+            else 
+                (s1, as, [b])
+
+{-
 
 -- Separamos ejecución de definición
 -- Ver si se puede poner una construcción que permita fusionar pasos (para que sean secuenciales en vez de paralelos)
@@ -62,15 +89,6 @@ strMap f = StrMapState () (\_ a -> ([f a], ()))
 
 strFilter :: (b -> Bool) -> Stream b b
 strFilter f = StrFilterState () (\_ b -> (f b, ()))
-
-{-
-a = pop()
-b = init(a);
-while (cond(b)) {
-    (c, b) <- body(a, b)
-    push(c)
-}
--}
 
 
 -- Ver si podemos tener generadores que se creen de distinta forma, y que 
@@ -127,7 +145,7 @@ ej4 sA sB = StrJoin stInit rfInit stExec sA sB
 
         --stExec (Just l, _, NoneDepleted) (DataFromRight (Just r)) = ([min l r], selectRead l r, (leftState l r, rightState l r, NoneDepleted))
         --stExec (Just l, _, NoneDepleted) (DataFromRight Nothing) = ([l], ReadFromLeft, (Nothing, Nothing, RightDepleted))
-
+-}
 --StrJoin         :: s -> ReadFrom -> (s -> DataFrom b d -> ([e], ReadFrom, s)) -> Stream a b -> Stream c d -> Stream (a, c) e
 
 {-

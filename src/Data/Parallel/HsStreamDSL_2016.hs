@@ -32,11 +32,15 @@ ms2 (l:ls) (r:rs)
     | l <= r      = l:(ms2 ls (r:rs))
     | otherwise  = (ms2 (r:rs) (l:ls))
 
+{-
 -- Podría ser útil una función que lea todos los valores evaluados readEval :: Stream a => [a]
 data Stream a where
     SNil    :: Stream a
     SUneval :: Stream a
     SEval   :: a -> Stream a -> Stream a
+-}
+
+type Stream a = Maybe [a]
 
 data Kernel a b where
     KMap          :: (Stream a -> (Stream a, [b])) -> Kernel a b
@@ -49,14 +53,14 @@ data Kernel a b where
 mergeSort :: Ord b => Kernel a b -> Kernel c b -> Kernel (Either a c) b
 mergeSort k1 k2 = KJoin kexec k1 k2
     where 
-        kexec SNil SNil = (SNil, SNil, [])
-        kexec SNil (SEval a as) = (SNil, as, [a])
-        kexec (SEval a as) SNil = (as, SNil, [a])
-        kexec s1@(SEval a as) s2@(SEval b bs) = 
+        kexec Nothing Nothing = (Nothing, Nothing, [])
+        kexec Nothing (Just as) = (Nothing, Just [], as)
+        kexec (Just as) Nothing = (Just [], Nothing, as)
+        kexec s1@(Just (a:as)) s2@(Just (b:bs)) = 
             if a < b then
-                (as, s2, [a])
+                (Just as, s2, [a])
             else 
-                (s1, as, [b])
+                (s1, Just bs, [b])
 
 {-
 

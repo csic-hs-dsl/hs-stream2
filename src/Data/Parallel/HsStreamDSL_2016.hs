@@ -9,8 +9,12 @@
 
 module Data.Parallel.HsStreamDSL_2016 where
 
+
 import Control.Applicative
+import Control.Monad.State.Lazy
 import Data.Char
+
+
 
 data Z = Z
 infixl 3 :.
@@ -43,15 +47,50 @@ data Stream a where
 type Stream a = Maybe [a]
 
 data Kernel a b where
-    KMap          :: (Stream a -> (Stream a, [b])) -> Kernel a b
+    KMap          :: acc -> (Stream a -> State acc (Stream a, [b])) -> Kernel a b
+    KJoin         :: acc -> (Stream b -> Stream d -> State acc (Stream b, Stream d, [e])) -> Kernel a b -> Kernel c d -> Kernel (Either a c) e
+    KLoop         :: (a -> b) -> (b -> Bool) -> Kernel (a, b) (c, b) -> Kernel a c
     KLink         :: Kernel a b -> Kernel b c -> Kernel a c
-    KJoin         :: (Stream b -> Stream d -> (Stream b, Stream d, [e])) -> Kernel a b -> Kernel c d -> Kernel (Either a c) e
---    KLoop         :: (a -> b) -> (b -> Bool) -> Kernel (a, b) (c, b) -> Kernel a c
---    KFilter       :: s -> (s -> b -> (Bool, s)) -> Kernel b b
+
 --    KWhile        :: s -> (s -> b -> s) -> (s -> Bool) -> Kernel b b
 
+kMap :: (Stream a -> (Stream a, [b])) -> Kernel a b
+kMap f = KMap () $ \s -> return (f s)
+
+kJoin :: (Stream b -> Stream d -> (Stream b, Stream d, [e])) -> Kernel a b -> Kernel c d -> Kernel (Either a c) e
+kJoin f = KJoin () (\s1 s2 -> return $ f s1 s2)
+
+stop = Nothing
+continue = Just []
+keep ls = Just ls
+
+
+-- Ejemplos 
+
+-- Fibonacci
+ej1 :: Kernel () Int
+ej1 = KLoop (const (0, 1)) (const True) $ kMap fib
+    where 
+        fib Nothing = (stop, [])
+        fib (Just [(_, (fibM1, fibM2))]) = (continue, [(fibM0, (fibM0, fibM1))])
+            where
+                fibM0 = fibM2 + fibM1
+
+{-
+-- Fibonacci Primes
+ej2 :: Stream () Int
+ej2 = StrLink ej1 $ strFilter isPrime
+    where isPrime _ = True
+
+-- Primeros N Fibonacci Primes
+ej3 :: Int -> Stream () Int
+ej3 n = StrLink ej2 $ StrWhile 0 (\s _ -> s + 1) (<= n)
+-}
+
+-- Merge sorted
+-- Pre: the streams are sorted
 mergeSort :: Ord b => Kernel a b -> Kernel c b -> Kernel (Either a c) b
-mergeSort k1 k2 = KJoin kexec k1 k2
+mergeSort k1 k2 = kJoin kexec k1 k2
     where 
         kexec Nothing Nothing = (Nothing, Nothing, [])
         kexec Nothing (Just as) = (Nothing, Just [], as)

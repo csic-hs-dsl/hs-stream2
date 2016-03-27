@@ -46,6 +46,16 @@ data Stream a where
 
 type Stream a = Maybe [a]
 
+sEmpty :: Stream a -> Stream a
+sEmpty = fmap (const [])
+
+sData :: Stream a -> [a]
+sData = maybe [] id
+
+sMap :: (a -> b) -> Stream a -> (Stream a, [b])
+sMap _ Nothing = (Nothing, [])
+sMap f (Just ls) = (Just [], map f ls)
+
 data Kernel a b where
     KMap          :: acc -> (Stream a -> State acc (Stream a, [b])) -> Kernel a b
     KJoin         :: acc -> (Stream b -> Stream d -> State acc (Stream b, Stream d, [e])) -> Kernel a b -> Kernel c d -> Kernel (Either a c) e
@@ -62,6 +72,18 @@ stop = Nothing
 continue = Just []
 keep ls = Just ls
 
+splitChoto :: Kernel (Either Int Int) Int 
+splitChoto = 
+    let
+        k1 = kMap (sMap id)
+        k2 = kMap (sMap id)
+        k3 = kMap (sMap id)
+        d1 = KLink k1 k2
+        d2 = KLink k1 k3
+        fund3 = undefined
+    in kJoin fund3  d1 d2
+        
+        
 
 -- Ejemplos 
 

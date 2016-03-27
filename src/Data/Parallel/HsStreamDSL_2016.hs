@@ -49,10 +49,8 @@ type Stream a = Maybe [a]
 data Kernel a b where
     KMap          :: acc -> (Stream a -> State acc (Stream a, [b])) -> Kernel a b
     KJoin         :: acc -> (Stream b -> Stream d -> State acc (Stream b, Stream d, [e])) -> Kernel a b -> Kernel c d -> Kernel (Either a c) e
-    KLoop         :: (a -> b) -> (b -> Bool) -> Kernel (a, b) (c, b) -> Kernel a c
+    KLoop         :: (a -> b) -> (b -> c) -> Kernel b b -> Kernel a c
     KLink         :: Kernel a b -> Kernel b c -> Kernel a c
-
---    KWhile        :: s -> (s -> b -> s) -> (s -> Bool) -> Kernel b b
 
 kMap :: (Stream a -> (Stream a, [b])) -> Kernel a b
 kMap f = KMap () $ \s -> return (f s)
@@ -68,11 +66,11 @@ keep ls = Just ls
 -- Ejemplos 
 
 -- Fibonacci
-ej1 :: Kernel () Int
-ej1 = KLoop (const (0, 1)) (const True) $ kMap fib
+ej1 :: Kernel (Int, Int) Int
+ej1 = KLoop id (fst) $ kMap fib
     where 
         fib Nothing = (stop, [])
-        fib (Just [(_, (fibM1, fibM2))]) = (continue, [(fibM0, (fibM0, fibM1))])
+        fib (Just [(fibM1, fibM2)]) = (continue, [(fibM0, fibM1)])
             where
                 fibM0 = fibM2 + fibM1
 

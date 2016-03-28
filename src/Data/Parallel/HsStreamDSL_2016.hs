@@ -58,10 +58,17 @@ sMap f (Just ls) = (Just [], map f ls)
 
 data Kernel a b where
     KMap          :: acc -> (Stream a -> State acc (Stream a, [b])) -> Kernel a b
-    KJoin         :: acc -> (Stream b -> Stream d -> State acc (Stream b, Stream d, [e])) -> Kernel a b -> Kernel c d -> Kernel (Either a c) e
+    KJoin         :: acc -> (Stream a -> Stream b -> State acc (Stream a, Stream b, [c])) -> Kernel (Either a b) c
     KLoop         :: (a -> b) -> (b -> c) -> Kernel b b -> Kernel a c
-    KLink         :: Kernel a b -> Kernel b c -> Kernel a c
 
+data Pipeline a b where
+    PRet   :: Kernel a b -> Pipeline a b
+    PLink  :: Pipeline a b -> Pipeline b c -> Pipeline a c
+    PJoin  :: Kernel a b -> Kernel c d -> Kernel (Either b c) e -> Pipeline (Either a c) e
+
+
+
+{-
 kMap :: (Stream a -> (Stream a, [b])) -> Kernel a b
 kMap f = KMap () $ \s -> return (f s)
 
@@ -120,7 +127,7 @@ mergeSort k1 k2 = kJoin kexec k1 k2
                 (Just as, s2, [a])
             else 
                 (s1, Just bs, [b])
-
+-}
 {-
 
 -- Separamos ejecución de definición

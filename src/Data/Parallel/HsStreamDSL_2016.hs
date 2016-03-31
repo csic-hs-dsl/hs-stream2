@@ -68,29 +68,30 @@ data Pipeline a b where
 
 
 
-{-
+
 kMap :: (Stream a -> (Stream a, [b])) -> Kernel a b
 kMap f = KMap () $ \s -> return (f s)
 
-kJoin :: (Stream b -> Stream d -> (Stream b, Stream d, [e])) -> Kernel a b -> Kernel c d -> Kernel (Either a c) e
+kJoin :: (Stream a -> Stream b -> (Stream a, Stream b, [c])) -> Kernel (Either a b) c
 kJoin f = KJoin () (\s1 s2 -> return $ f s1 s2)
+
 
 stop = Nothing
 continue = Just []
 keep ls = Just ls
 
-splitChoto :: Kernel (Either Int Int) Int 
+splitChoto :: Pipeline Int Int 
 splitChoto = 
     let
-        k1 = kMap (sMap id)
+        magia Nothing = (Nothing, [])
+        magia (Just ls) = (Just [], (map Left ls) ++ (map Right ls))
+        k1 = kMap magia
         k2 = kMap (sMap id)
         k3 = kMap (sMap id)
-        d1 = KLink k1 k2
-        d2 = KLink k1 k3
-        fund3 = undefined
-    in kJoin fund3  d1 d2
+        k4 = kJoin undefined
+    in PLink (PRet k1) (PJoin k2 k3 k4)
         
-        
+{-        
 
 -- Ejemplos 
 

@@ -61,12 +61,16 @@ data Kernel a b where
     KJoin         :: acc -> (Stream a -> Stream b -> State acc (Stream a, Stream b, [c])) -> Kernel (Either a b) c
     KLoop         :: (a -> b) -> (b -> c) -> Kernel b b -> Kernel a c
 
+data Gen a
 data Pipeline a b where
     PRet   :: Kernel a b -> Pipeline a b
     PLink  :: Pipeline a b -> Pipeline b c -> Pipeline a c
     PJoin  :: Kernel a b -> Kernel c d -> Kernel (Either b c) e -> Pipeline (Either a c) e
+    PGenL   :: Pipeline (Either a b) c -> Gen a -> Pipeline b c
+    PGenR   :: Pipeline (Either a b) c -> Gen b -> Pipeline a c
 
-
+execPipeline :: Gen a -> Pipeline a b -> Gen b
+execPipeline = undefined
 
 
 kMap :: (Stream a -> (Stream a, [b])) -> Kernel a b

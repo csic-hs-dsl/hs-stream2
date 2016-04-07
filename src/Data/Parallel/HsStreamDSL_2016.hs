@@ -16,6 +16,34 @@ import Data.Char
 
 
 
+data SList a where
+    SNil    :: SList a
+    SUneval :: SList a
+    SCons   :: a -> SList a -> SList a
+
+--runSList :: SList a -> [a]
+--runLExpr :: LExpr a -> SList a
+
+-- LOST: List Oriented STreaming!
+data LExpr a where
+    SLit  :: Gen a -> LExpr a
+    SApp1  :: s -> (SList a -> State s (SList a, SList b)) -> LExpr a -> LExpr b
+    SApp2 :: s -> ((SList a, SList b) -> State s ((SList a, SList b), SList c)) -> LExpr a -> LExpr b -> LExpr c
+    SApp :: SameLenght slistas lexpras => s -> ((SList a):.slistas -> State s ((SList a):.slistas, SList c)) -> (LExpr a):.lexpras -> LExpr c
+    SRec  :: es -> (es -> (SList a, es)) -> LExpr a
+
+class SameLenght a b
+instance SameLenght Z Z
+instance SameLenght a b => SameLenght (a':.a) (b':.b)
+
+aa = 
+    let 
+        algo = undefined
+        algo2 = undefined
+        la = algo lb
+        lb = algo2 la
+    in la
+
 data Z = Z
 infixl 3 :.
 data tail :. head = !tail :. !head

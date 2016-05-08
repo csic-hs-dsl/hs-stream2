@@ -14,7 +14,7 @@ import Control.Applicative
 import Control.Monad.State.Lazy
 import Data.Char
 
-
+-------------------------------------------------------------------------------------------
 
 data SList a where
     SNil    :: SList a
@@ -26,23 +26,35 @@ data SList a where
 
 -- LOST: List Oriented STreaming!
 data LExpr a where
-    SLit  :: Gen a -> LExpr a
+    SLit   :: Gen a -> LExpr a
     SApp1  :: s -> (SList a -> State s (SList a, SList b)) -> LExpr a -> LExpr b
-    SApp2 :: s -> ((SList a, SList b) -> State s ((SList a, SList b), SList c)) -> LExpr a -> LExpr b -> LExpr c
-    SApp :: SameLenght slistas lexpras => s -> ((SList a):.slistas -> State s ((SList a):.slistas, SList c)) -> (LExpr a):.lexpras -> LExpr c
-    SRec  :: es -> (es -> (SList a, es)) -> LExpr a
+    SApp2  :: s -> ((SList a, SList b) -> State s ((SList a, SList b), SList c)) -> LExpr a -> LExpr b -> LExpr c
+    SConcat:: LExpr (LExpr a) -> LExpr a
 
-class SameLenght a b
-instance SameLenght Z Z
-instance SameLenght a b => SameLenght (a':.a) (b':.b)
+instance Functor LExpr where
+    fmap f = SApp1 () f' 
+        where f' = undefined
 
-aa = 
-    let 
-        algo = undefined
-        algo2 = undefined
-        la = algo lb
-        lb = algo2 la
-    in la
+instance Applicative LExpr where
+    pure a = SLit f'
+        where f' = undefined
+--  (<*>) :: LExpr (a -> b) -> LExpr a -> LExpr b
+    (<*>) sf sa = SApp2 () f sf sa
+        where f = undefined
+
+instance Monad LExpr where
+    return = pure
+--  (>>=) :: LExpr a -> (a -> LExpr b) -> LExpr b
+    (>>=) m f = SConcat (fmap f m)
+
+-- gen >>= (\a -> algo a)
+
+ejjj =  do
+    a <- SLit $ Gen [1, 2, 3]
+    return (a + 2)
+
+
+-------------------------------------------------------------------------------------------
 
 data Z = Z
 infixl 3 :.
@@ -89,7 +101,7 @@ data Kernel a b where
     KJoin         :: acc -> (Stream a -> Stream b -> State acc (Stream a, Stream b, [c])) -> Kernel (Either a b) c
     KLoop         :: (a -> b) -> (b -> c) -> Kernel b b -> Kernel a c
 
-data Gen a
+data Gen a = Gen [a]
 data Pipeline a b where
     PRet   :: Kernel a b -> Pipeline a b
     PLink  :: Pipeline a b -> Pipeline b c -> Pipeline a c
